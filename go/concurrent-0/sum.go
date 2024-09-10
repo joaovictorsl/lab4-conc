@@ -38,25 +38,48 @@ func main() {
 		return
 	}
 
-	var totalSum int64
-	sums := make(map[int][]string)
+	outCh := make(chan result, len(os.Args[1:]))
+
 	for _, path := range os.Args[1:] {
-		_sum, err := sum(path)
-
-		if err != nil {
-			continue
-		}
-
-		totalSum += int64(_sum)
-
-		sums[_sum] = append(sums[_sum], path)
+		go sum_worker(path, outCh)
 	}
 
-	fmt.Println(totalSum)
+	totalSum, sumMap := aggregator(len(os.Args[1:]), outCh)
 
-	for sum, files := range sums {
+	fmt.Println("totalSum:", totalSum)
+
+	for sum, files := range sumMap {
 		if len(files) > 1 {
 			fmt.Printf("Sum %d: %v\n", sum, files)
 		}
 	}
+}
+
+type result struct {
+	sum  int64
+	path string
+}
+
+func sum_worker(path string, outCh chan result) {
+	_sum, err := sum(path)
+
+	if err != nil {
+		return
+	}
+
+	outCh <- result{int64(_sum), path}
+}
+
+func aggregator(expected int, outCh chan result) (int64, map[int][]string) {
+	var totalSum int64
+	sumMap := make(map[int][]string)
+
+	for i := 0; i < expected; i++ {
+		res := <-outCh
+		totalSum += res.sum
+		sumMap[int(res.sum)] = append(sumMap[int(res.sum)], res.path)
+	}
+	close(outCh)
+
+	return totalSum, sumMap
 }
